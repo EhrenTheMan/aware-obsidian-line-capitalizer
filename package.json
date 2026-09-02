@@ -1,13 +1,13 @@
 {
-	"name": "line-capitalizer",
+	"name": "aware-obsidian-line-capitalizer",
 	"version": "1.0.0",
-	"description": "Capitalizes the first letter of lines",
+	"description": "Capitalizes the first letter of lines with context awareness and overwrite support",
 	"main": "main.js",
 	"scripts": {
 		"build": "esbuild main.ts --bundle --external:obsidian --outfile=main.js --format=cjs --platform=node"
 	},
 	"keywords": [],
-	"author": "",
+	"author": "EhrenTheMan",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",

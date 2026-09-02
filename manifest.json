@@ -1,9 +1,10 @@
 {
-	"id": "line-capitalizer",
-	"name": "Line Capitalizer",
+	"id": "aware-obsidian-line-capitalizer",
+	"name": "Aware Line Capitalizer",
 	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
-	"description": "Automatically capitalize the first letter of each line as you type.",
-	"author": "Daniele Secondi",
+	"description": "Automatically capitalize the first letter of each line as you type with context awareness and overwrite support.",
+	"author": "EhrenTheMan",
+	"authorUrl": "https://github.com/EhrenTheMan",
 	"isDesktopOnly": false
 }
