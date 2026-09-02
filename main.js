@@ -24,18 +24,176 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var LineCapitalizerPlugin = class extends import_obsidian.Plugin {
+  constructor() {
+    super(...arguments);
+    this.lineHistory = /* @__PURE__ */ new Map();
+  }
   onload() {
     this.registerEvent(
       this.app.workspace.on("editor-change", (editor) => {
-        const cursor = editor.getCursor();
-        const line = editor.getLine(cursor.line);
-        const match = line.match(/\p{L}/u);
-        if (match && match[0] !== match[0].toUpperCase()) {
-          const idx = match.index;
-          editor.setLine(cursor.line, line.slice(0, idx) + match[0].toUpperCase() + line.slice(idx + 1));
-          editor.setCursor(cursor);
-        }
+        this.handleEditorChange(editor);
       })
     );
+  }
+  handleEditorChange(editor) {
+    const cursor = editor.getCursor();
+    const currentLineNum = cursor.line;
+    const currentLine = editor.getLine(currentLineNum);
+    let history = this.lineHistory.get(editor);
+    if (!history || history.lineNumber !== currentLineNum) {
+      history = {
+        lineNumber: currentLineNum,
+        text: currentLine,
+        overwrittenIndices: /* @__PURE__ */ new Set()
+      };
+      this.lineHistory.set(editor, history);
+    } else {
+      const prevText = history.text;
+      if (prevText.length === currentLine.length) {
+        for (let i = 0; i < currentLine.length; i++) {
+          const prevChar = prevText[i];
+          const currChar = currentLine[i];
+          if (prevChar !== currChar && prevChar.toLowerCase() === currChar.toLowerCase() && prevChar === prevChar.toUpperCase() && currChar === currChar.toLowerCase()) {
+            history.overwrittenIndices.add(i);
+          }
+        }
+      } else if (currentLine.length < prevText.length) {
+        history.overwrittenIndices.clear();
+      }
+      history.text = currentLine;
+    }
+    if (this.isInMultiLineBlock(editor, currentLineNum)) {
+      return;
+    }
+    const targetIndex = this.getFirstCapitalizableIndex(currentLine);
+    if (targetIndex === -1) {
+      return;
+    }
+    if (history.overwrittenIndices.has(targetIndex)) {
+      return;
+    }
+    const char = currentLine[targetIndex];
+    if (char !== char.toUpperCase()) {
+      const capitalizedChar = char.toUpperCase();
+      const newLine = currentLine.slice(0, targetIndex) + capitalizedChar + currentLine.slice(targetIndex + 1);
+      history.text = newLine;
+      editor.setLine(currentLineNum, newLine);
+      editor.setCursor(cursor);
+    }
+  }
+  /**
+   * Check if a line is inside a multi-line fenced code block (``` or ~~~),
+   * LaTeX block ($$...$$), or YAML frontmatter (---...---).
+   */
+  isInMultiLineBlock(editor, targetLineNum) {
+    let inCodeBlock = false;
+    let inMathBlock = false;
+    let inFrontmatter = false;
+    for (let i = 0; i <= targetLineNum; i++) {
+      const line = editor.getLine(i).trim();
+      if (i === 0 && line === "---") {
+        inFrontmatter = true;
+        if (targetLineNum === 0)
+          return true;
+        continue;
+      }
+      if (inFrontmatter) {
+        if (line === "---" || line === "...") {
+          inFrontmatter = false;
+          if (i === targetLineNum)
+            return true;
+        } else if (i === targetLineNum) {
+          return true;
+        }
+        continue;
+      }
+      if (line.startsWith("```") || line.startsWith("~~~")) {
+        if (!inCodeBlock) {
+          inCodeBlock = true;
+        } else {
+          inCodeBlock = false;
+        }
+        if (i === targetLineNum) {
+          return true;
+        }
+        continue;
+      }
+      if (line.startsWith("$$")) {
+        const occurrences = (line.match(/\$\$/g) || []).length;
+        if (occurrences % 2 === 1) {
+          inMathBlock = !inMathBlock;
+        }
+        if (i === targetLineNum) {
+          return true;
+        }
+        continue;
+      }
+      if (i === targetLineNum) {
+        if (inCodeBlock || inMathBlock) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  /**
+   * Find the index in `line` of the first letter that should be capitalized,
+   * skipping markdown prefixes (lists, blockquotes, headings, checkboxes, callouts)
+   * and ignoring lines that begin with code, math, links, tags, URLs, HTML tags, etc.
+   */
+  getFirstCapitalizableIndex(line) {
+    let offset = 0;
+    let text = line;
+    const bqMatch = text.match(/^(\s*>\s*)+/);
+    if (bqMatch) {
+      offset += bqMatch[0].length;
+      text = text.slice(bqMatch[0].length);
+    }
+    const listMatch = text.match(/^\s*(?:[-*+]\s+(?:\[[ xX\-/]\]\s+)?|\d+[\.\)]\s+)/);
+    if (listMatch) {
+      offset += listMatch[0].length;
+      text = text.slice(listMatch[0].length);
+    }
+    const headingMatch = text.match(/^\s*#{1,6}\s+/);
+    if (headingMatch) {
+      offset += headingMatch[0].length;
+      text = text.slice(headingMatch[0].length);
+    }
+    const wsMatch = text.match(/^\s+/);
+    if (wsMatch) {
+      offset += wsMatch[0].length;
+      text = text.slice(wsMatch[0].length);
+    }
+    if (text.length === 0) {
+      return -1;
+    }
+    if (text.startsWith("`")) {
+      return -1;
+    }
+    if (text.startsWith("$")) {
+      return -1;
+    }
+    if (text.startsWith("[") || text.startsWith("![") || text.startsWith("[[")) {
+      return -1;
+    }
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text)) {
+      return -1;
+    }
+    if (text.startsWith("#")) {
+      return -1;
+    }
+    if (text.startsWith("<")) {
+      return -1;
+    }
+    const match = text.match(/\p{L}/u);
+    if (!match || match.index === void 0) {
+      return -1;
+    }
+    const letterIndexInText = match.index;
+    const prefix = text.slice(0, letterIndexInText);
+    if (!/^["'“‘«(（\[{<_\s]*$/u.test(prefix)) {
+      return -1;
+    }
+    return offset + letterIndexInText;
   }
 };
