@@ -1,5 +1,5 @@
 {
-	"name": "aware-obsidian-line-capitalizer",
+	"name": "aware-line-capitalizer",
 	"version": "1.0.0",
 	"description": "Capitalizes the first letter of lines with context awareness and overwrite support",
 	"main": "main.js",

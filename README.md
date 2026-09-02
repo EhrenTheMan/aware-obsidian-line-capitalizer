@@ -30,7 +30,7 @@ Simply install and enable the plugin. Once activated, it will automatically capi
 ### Manual Installation
 
 1. Clone or download the repository files (`main.js`, `manifest.json`).
-2. Place them into your vault's `.obsidian/plugins/aware-obsidian-line-capitalizer/` directory.
+2. Place them into your vault's `.obsidian/plugins/aware-line-capitalizer/` directory.
 3. Reload Obsidian (or restart).
 4. Enable the plugin in **Settings → Community Plugins**.
 
