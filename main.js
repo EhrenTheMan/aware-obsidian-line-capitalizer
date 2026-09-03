@@ -27,6 +27,7 @@ var LineCapitalizerPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
     this.lineHistory = /* @__PURE__ */ new Map();
+    this.overwrittenLines = /* @__PURE__ */ new Set();
   }
   onload() {
     this.registerEvent(
@@ -44,38 +45,39 @@ var LineCapitalizerPlugin = class extends import_obsidian.Plugin {
       history = {
         lineNumber: currentLineNum,
         text: currentLine,
-        overwrittenIndices: /* @__PURE__ */ new Set()
+        capitalizedIndex: null
       };
       this.lineHistory.set(editor, history);
     } else {
       const prevText = history.text;
-      if (prevText.length === currentLine.length) {
-        for (let i = 0; i < currentLine.length; i++) {
-          const prevChar = prevText[i];
-          const currChar = currentLine[i];
-          if (prevChar !== currChar && prevChar.toLowerCase() === currChar.toLowerCase() && prevChar === prevChar.toUpperCase() && currChar === currChar.toLowerCase()) {
-            history.overwrittenIndices.add(i);
-          }
+      const prevCapIndex = history.capitalizedIndex;
+      if (prevCapIndex !== null && prevCapIndex < currentLine.length) {
+        const prevChar = prevText[prevCapIndex];
+        const currChar = currentLine[prevCapIndex];
+        if (prevChar && currChar && prevChar === prevChar.toUpperCase() && currChar === currChar.toLowerCase() && prevChar.toLowerCase() === currChar.toLowerCase()) {
+          this.overwrittenLines.add(currentLineNum);
         }
-      } else if (currentLine.length < prevText.length) {
-        history.overwrittenIndices.clear();
+      }
+      if (currentLine.length < prevText.length) {
+        this.overwrittenLines.delete(currentLineNum);
       }
       history.text = currentLine;
     }
     if (this.isInMultiLineBlock(editor, currentLineNum)) {
       return;
     }
-    const targetIndex = this.getFirstCapitalizableIndex(currentLine);
-    if (targetIndex === -1) {
+    if (this.overwrittenLines.has(currentLineNum)) {
       return;
     }
-    if (history.overwrittenIndices.has(targetIndex)) {
+    const targetIndex = this.getFirstCapitalizableIndex(currentLine);
+    if (targetIndex === -1) {
       return;
     }
     const char = currentLine[targetIndex];
     if (char !== char.toUpperCase()) {
       const capitalizedChar = char.toUpperCase();
       const newLine = currentLine.slice(0, targetIndex) + capitalizedChar + currentLine.slice(targetIndex + 1);
+      history.capitalizedIndex = targetIndex;
       history.text = newLine;
       editor.setLine(currentLineNum, newLine);
       editor.setCursor(cursor);
@@ -90,15 +92,16 @@ var LineCapitalizerPlugin = class extends import_obsidian.Plugin {
     let inMathBlock = false;
     let inFrontmatter = false;
     for (let i = 0; i <= targetLineNum; i++) {
-      const line = editor.getLine(i).trim();
-      if (i === 0 && line === "---") {
+      const line = editor.getLine(i);
+      const trimmedLine = line.trim();
+      if (i === 0 && trimmedLine === "---") {
         inFrontmatter = true;
         if (targetLineNum === 0)
           return true;
         continue;
       }
       if (inFrontmatter) {
-        if (line === "---" || line === "...") {
+        if (trimmedLine === "---" || trimmedLine === "...") {
           inFrontmatter = false;
           if (i === targetLineNum)
             return true;
@@ -107,7 +110,8 @@ var LineCapitalizerPlugin = class extends import_obsidian.Plugin {
         }
         continue;
       }
-      if (line.startsWith("```") || line.startsWith("~~~")) {
+      const codeBlockMatch = trimmedLine.match(/^(`{3}|~{3})/);
+      if (codeBlockMatch) {
         if (!inCodeBlock) {
           inCodeBlock = true;
         } else {
@@ -118,8 +122,8 @@ var LineCapitalizerPlugin = class extends import_obsidian.Plugin {
         }
         continue;
       }
-      if (line.startsWith("$$")) {
-        const occurrences = (line.match(/\$\$/g) || []).length;
+      if (trimmedLine.startsWith("$$")) {
+        const occurrences = (trimmedLine.match(/\$\$/g) || []).length;
         if (occurrences % 2 === 1) {
           inMathBlock = !inMathBlock;
         }

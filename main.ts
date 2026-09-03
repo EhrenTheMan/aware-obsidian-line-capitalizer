@@ -3,11 +3,12 @@ import { Plugin, Editor } from 'obsidian'
 interface LineHistory {
 	lineNumber: number
 	text: string
-	overwrittenIndices: Set<number>
+	capitalizedIndex: number | null
 }
 
 export default class LineCapitalizerPlugin extends Plugin {
 	private lineHistory: Map<Editor, LineHistory> = new Map()
+	private overwrittenLines: Set<number> = new Set()
 
 	onload() {
 		this.registerEvent(
@@ -29,36 +30,44 @@ export default class LineCapitalizerPlugin extends Plugin {
 			history = {
 				lineNumber: currentLineNum,
 				text: currentLine,
-				overwrittenIndices: new Set()
+				capitalizedIndex: null
 			}
 			this.lineHistory.set(editor, history)
 		} else {
-			// Check if the user manually changed an uppercase letter back to lowercase (intentional overwrite)
+			// Check if the user manually changed a capitalized letter back to lowercase
 			const prevText = history.text
-			// If length didn't change (e.g., character replaced / overwritten)
-			if (prevText.length === currentLine.length) {
-				for (let i = 0; i < currentLine.length; i++) {
-					const prevChar = prevText[i]
-					const currChar = currentLine[i]
-					if (
-						prevChar !== currChar &&
-						prevChar.toLowerCase() === currChar.toLowerCase() &&
-						prevChar === prevChar.toUpperCase() &&
-						currChar === currChar.toLowerCase()
-					) {
-						// The user explicitly changed uppercase to lowercase at index i
-						history.overwrittenIndices.add(i)
-					}
+			const prevCapIndex = history.capitalizedIndex
+
+			if (prevCapIndex !== null && prevCapIndex < currentLine.length) {
+				const prevChar = prevText[prevCapIndex]
+				const currChar = currentLine[prevCapIndex]
+				// If the character at the capitalized position is now lowercase, user intentionally overwrote it
+				if (
+					prevChar &&
+					currChar &&
+					prevChar === prevChar.toUpperCase() &&
+					currChar === currChar.toLowerCase() &&
+					prevChar.toLowerCase() === currChar.toLowerCase()
+				) {
+					this.overwrittenLines.add(currentLineNum)
 				}
-			} else if (currentLine.length < prevText.length) {
-				// Characters deleted or replaced with shorter text: adjust or clear tracked indices
-				history.overwrittenIndices.clear()
 			}
+
+			// If the line was significantly modified (deleted characters), clear the overwrite tracking for this line
+			if (currentLine.length < prevText.length) {
+				this.overwrittenLines.delete(currentLineNum)
+			}
+
 			history.text = currentLine
 		}
 
 		// Don't capitalize inside multi-line code blocks or math blocks
 		if (this.isInMultiLineBlock(editor, currentLineNum)) {
+			return
+		}
+
+		// If this line has been explicitly overwritten to lowercase by the user, respect that
+		if (this.overwrittenLines.has(currentLineNum)) {
 			return
 		}
 
@@ -68,15 +77,11 @@ export default class LineCapitalizerPlugin extends Plugin {
 			return
 		}
 
-		// Check if this position was explicitly overwritten to lowercase by the user
-		if (history.overwrittenIndices.has(targetIndex)) {
-			return
-		}
-
 		const char = currentLine[targetIndex]
 		if (char !== char.toUpperCase()) {
 			const capitalizedChar = char.toUpperCase()
 			const newLine = currentLine.slice(0, targetIndex) + capitalizedChar + currentLine.slice(targetIndex + 1)
+			history.capitalizedIndex = targetIndex
 			history.text = newLine
 			editor.setLine(currentLineNum, newLine)
 			editor.setCursor(cursor)
@@ -93,16 +98,17 @@ export default class LineCapitalizerPlugin extends Plugin {
 		let inFrontmatter = false
 
 		for (let i = 0; i <= targetLineNum; i++) {
-			const line = editor.getLine(i).trim()
+			const line = editor.getLine(i)
+			const trimmedLine = line.trim()
 
 			// Check YAML frontmatter (only at the very beginning of the document)
-			if (i === 0 && line === '---') {
+			if (i === 0 && trimmedLine === '---') {
 				inFrontmatter = true
 				if (targetLineNum === 0) return true
 				continue
 			}
 			if (inFrontmatter) {
-				if (line === '---' || line === '...') {
+				if (trimmedLine === '---' || trimmedLine === '...') {
 					inFrontmatter = false
 					if (i === targetLineNum) return true
 				} else if (i === targetLineNum) {
@@ -111,8 +117,9 @@ export default class LineCapitalizerPlugin extends Plugin {
 				continue
 			}
 
-			// Check multi-line fenced code blocks
-			if (line.startsWith('```') || line.startsWith('~~~')) {
+			// Check multi-line fenced code blocks - look for opening/closing markers at the start of trimmed line
+			const codeBlockMatch = trimmedLine.match(/^(`{3}|~{3})/)
+			if (codeBlockMatch) {
 				if (!inCodeBlock) {
 					inCodeBlock = true
 				} else {
@@ -126,8 +133,8 @@ export default class LineCapitalizerPlugin extends Plugin {
 
 			// Check multi-line math blocks ($$)
 			// A line containing both opening and closing $$ on the same line doesn't toggle multiline math block state
-			if (line.startsWith('$$')) {
-				const occurrences = (line.match(/\$\$/g) || []).length
+			if (trimmedLine.startsWith('$$')) {
+				const occurrences = (trimmedLine.match(/\$\$/g) || []).length
 				if (occurrences % 2 === 1) {
 					inMathBlock = !inMathBlock
 				}
